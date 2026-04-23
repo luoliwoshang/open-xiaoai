@@ -20,6 +20,23 @@
 - 处理原始麦克风音频流
 - 给音箱回传 TTS 或音频
 
+## 结构
+
+当前工程只保留三层：
+
+- `main.go`
+  负责启动参数和装配默认 `onASR` 处理逻辑
+- `internal/server`
+  负责 WebSocket 接入、连接会话、RPC 调用、`abort` 能力
+- `internal/instruction`
+  负责从 `instruction` 事件里提取最终 ASR 文本
+
+这样拆分后：
+
+- 协议和连接细节不会继续污染入口文件
+- `AbortXiaoAI()` 变成了独立能力
+- 你后面如果要接 HTTP、规则引擎或自己的 Agent，只需要替换 `main.go` 里的 `onASR` 处理函数
+
 ## 运行
 
 ```sh
