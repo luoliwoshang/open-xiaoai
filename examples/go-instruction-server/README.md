@@ -28,6 +28,8 @@
   负责启动参数和装配默认 `onASR` 处理逻辑
 - `internal/server`
   负责 WebSocket 接入、连接会话、RPC 调用、`abort` 能力
+- `internal/speaker`
+  负责复用音箱本地 TTS 播放单段文字和模拟流式文字播放
 - `internal/instruction`
   负责从 `instruction` 事件里提取最终 ASR 文本
 
@@ -35,6 +37,8 @@
 
 - 协议和连接细节不会继续污染入口文件
 - `AbortXiaoAI()` 变成了独立能力
+- `PlayText()` 也变成了独立能力
+- `PlayTextStream()` 用来顺序播放多段文字 chunk
 - 你后面如果要接 HTTP、规则引擎或自己的 Agent，只需要替换 `main.go` 里的 `onASR` 处理函数
 
 ## 运行
@@ -57,6 +61,21 @@ go run . -addr :4399 -debug
 ```sh
 go run . -abort-after-asr=false
 ```
+
+## 当前示例行为
+
+当前 `main.go` 里带了一个最小示例规则：
+
+- 当识别结果等于 `测试播放文字`
+- 先打断原生小爱
+- 等待 2 秒
+- 然后调用 `internal/speaker` 里的 `PlayText()` 播放：
+  `你好，很高兴认识你！`
+
+- 当识别结果等于 `测试长段播放文字`
+- 先打断原生小爱
+- 等待 2 秒
+- 然后调用 `internal/speaker` 里的 `PlayTextStream()`，按多段 chunk 顺序播放一段长回复
 
 ## 让音箱连过来
 

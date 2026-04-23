@@ -28,16 +28,16 @@ func newSession(conn *websocket.Conn) *Session {
 	}
 }
 
-func (s *Session) RunShell(script string, timeout time.Duration) (shellResult, error) {
+func (s *Session) RunShell(script string, timeout time.Duration) (CommandResult, error) {
 	resp, err := s.call("run_shell", script, timeout)
 	if err != nil {
-		return shellResult{}, err
+		return CommandResult{}, err
 	}
 
-	var result shellResult
+	var result CommandResult
 	if len(resp.Data) > 0 && string(resp.Data) != "null" {
 		if err := json.Unmarshal(resp.Data, &result); err != nil {
-			return shellResult{}, fmt.Errorf("decode run_shell result: %w", err)
+			return CommandResult{}, fmt.Errorf("decode run_shell result: %w", err)
 		}
 	}
 

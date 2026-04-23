@@ -27,7 +27,7 @@ type responseMessage struct {
 	Data json.RawMessage `json:"data,omitempty"`
 }
 
-type shellResult struct {
+type CommandResult struct {
 	Stdout   string `json:"stdout"`
 	Stderr   string `json:"stderr"`
 	ExitCode int    `json:"exit_code"`

@@ -45,7 +45,7 @@ func TestSessionRunShell(t *testing.T) {
 			return
 		}
 
-		data, err := json.Marshal(shellResult{
+		data, err := json.Marshal(CommandResult{
 			Stdout:   "ok\n",
 			ExitCode: 0,
 		})
@@ -104,7 +104,7 @@ func TestSessionAbortXiaoAI(t *testing.T) {
 				return
 			}
 
-			data, _ := json.Marshal(shellResult{ExitCode: 0})
+			data, _ := json.Marshal(CommandResult{ExitCode: 0})
 			session.onResponse(responseMessage{
 				ID:   msg.Request.ID,
 				Data: data,
@@ -134,7 +134,7 @@ func TestSessionAbortXiaoAI(t *testing.T) {
 				return
 			}
 
-			data, _ := json.Marshal(shellResult{
+			data, _ := json.Marshal(CommandResult{
 				ExitCode: 1,
 				Stderr:   "boom",
 			})
