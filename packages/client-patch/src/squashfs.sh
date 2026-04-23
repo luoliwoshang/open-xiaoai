@@ -4,6 +4,16 @@ set -e
 
 BASE_DIR=$(pwd)
 WORK_DIR=$BASE_DIR/temp
+PSEUDO_DEVICES_FILE=$WORK_DIR/pseudo-devices.txt
+
+get_file_size() {
+    local file="$1"
+    if stat -L -f %z "$file" >/dev/null 2>&1; then
+        stat -L -f %z "$file"
+    else
+        stat -L -c %s "$file"
+    fi
+}
 
 FIRMWARE=$(basename $(ls $BASE_DIR/assets/*.bin 2>/dev/null | head -n 1) .bin)
 
@@ -24,11 +34,18 @@ echo "🚗 原始固件信息: $SQUASHFS_INFO"
 
 COMPRESSION=$(echo "$SQUASHFS_INFO" | grep -o "xz\|gzip\|lzo\|lz4\|zstd compressed" | cut -d' ' -f1)
 BLOCKSIZE=$(echo "$SQUASHFS_INFO" | grep -o "blocksize: [0-9]* bytes" | cut -d' ' -f2)
+PSEUDO_ARGS=()
+
+if [ -s "$PSEUDO_DEVICES_FILE" ]; then
+    echo "🧩 检测到设备节点定义，重新打包时将一并恢复"
+    PSEUDO_ARGS=(-pf "$PSEUDO_DEVICES_FILE")
+fi
 
 echo "🔥 使用原始参数重新打包固件..."
 mksquashfs squashfs-root $FIRMWARE/root-patched.squashfs \
     -comp $COMPRESSION -b $BLOCKSIZE \
-    -noappend -all-root -always-use-fragments -no-xattrs -no-exports
+    -noappend -all-root -always-use-fragments -no-xattrs -no-exports \
+    "${PSEUDO_ARGS[@]}"
 
 
 # 校验固件大小上限
@@ -40,7 +57,7 @@ elif [ "$MODEL" = "LX06" ]; then
     IMAGE_MAX_SIZE=$((0x02800000))
 fi
 
-SIZE=$(stat -L -c %s "$FIRMWARE/root-patched.squashfs")
+SIZE=$(get_file_size "$FIRMWARE/root-patched.squashfs")
 SIZE_MB=$((SIZE / 1024 / 1024))
 IMAGE_MAX_SIZE_MB=$((IMAGE_MAX_SIZE / 1024 / 1024))
 

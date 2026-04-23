@@ -25,6 +25,7 @@ fi
 run_update() {
     local cmd="$UPDATE_BIN 2>/dev/null"
     local need_spaces=0
+    local quiet="${FLASH_QUIET:-0}"
     
     if [[ "$1" == "bulkcmd" ]]; then
        need_spaces=1
@@ -41,13 +42,22 @@ run_update() {
         fi
     done
     
-    echo -e "${CYAN}执行: $cmd${RESET}"
     local result=$(eval "$cmd")
-    echo -e "${YELLOW}$result${RESET}"
+    
+    if [ "$quiet" != "1" ]; then
+       echo -e "${CYAN}执行: $cmd${RESET}"
+       echo -e "${YELLOW}$result${RESET}"
+    fi
     
     if echo "$result" | grep -q "ERR"; then
-       echo -e "${RED}命令执行失败${RESET}"
+       if [ "$quiet" != "1" ]; then
+          echo -e "${RED}命令执行失败${RESET}"
+       fi
        return 1
+    fi
+    
+    if [ "$quiet" = "1" ]; then
+       echo "$result"
     fi
     
     return 0
@@ -68,15 +78,22 @@ show_help() {
 # 连接设备
 cmd_connect() {
     echo "🔌 请先拔掉设备电源，然后重新插上电源"
-    echo "💡 如果长时间未连接，请拔插电源后重试..."
+    echo "💡 设备只会短暂进入 WorldCup 模式，请保持数据线和电源都已连接后反复断电重试"
+    local attempts=0
+    local result=""
     while true; do
-        run_update identify 7
+        result=$(FLASH_QUIET=1 run_update identify 7)
         if [ $? -eq 0 ]; then
+            echo -e "${CYAN}执行: $UPDATE_BIN 2>/dev/null identify 7${RESET}"
+            echo -e "${YELLOW}$result${RESET}"
             echo -e "${GREEN}✅ 设备已连接${RESET}"
             return 0
         fi
-        echo "⏳ 等待设备连接..."
-        sleep 1
+        attempts=$((attempts + 1))
+        if [ $((attempts % 10)) -eq 0 ]; then
+            echo "⏳ 等待设备连接..."
+        fi
+        sleep 0.1
     done
 }
 
