@@ -12,9 +12,11 @@ import (
 )
 
 var requestSeq atomic.Uint64
+var sessionSeq atomic.Uint64
 
 type Session struct {
 	conn *websocket.Conn
+	id   string
 
 	writeMu   sync.Mutex
 	pending   map[string]chan responseMessage
@@ -24,8 +26,13 @@ type Session struct {
 func newSession(conn *websocket.Conn) *Session {
 	return &Session{
 		conn:    conn,
+		id:      fmt.Sprintf("session-%d", sessionSeq.Add(1)),
 		pending: map[string]chan responseMessage{},
 	}
+}
+
+func (s *Session) HistoryKey() string {
+	return s.id
 }
 
 func (s *Session) RunShell(script string, timeout time.Duration) (CommandResult, error) {

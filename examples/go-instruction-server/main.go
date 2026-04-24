@@ -3,83 +3,117 @@ package main
 import (
 	"flag"
 	"log"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
+	"github.com/idootop/open-xiaoai/examples/go-instruction-server/internal/amap"
+	"github.com/idootop/open-xiaoai/examples/go-instruction-server/internal/assistant"
+	"github.com/idootop/open-xiaoai/examples/go-instruction-server/internal/config"
+	"github.com/idootop/open-xiaoai/examples/go-instruction-server/internal/dashboard"
+	"github.com/idootop/open-xiaoai/examples/go-instruction-server/internal/llm"
+	"github.com/idootop/open-xiaoai/examples/go-instruction-server/internal/plugin"
+	"github.com/idootop/open-xiaoai/examples/go-instruction-server/internal/plugins"
+	"github.com/idootop/open-xiaoai/examples/go-instruction-server/internal/plugins/complextask"
+	"github.com/idootop/open-xiaoai/examples/go-instruction-server/internal/plugins/continuetask"
+	"github.com/idootop/open-xiaoai/examples/go-instruction-server/internal/plugins/weather"
 	"github.com/idootop/open-xiaoai/examples/go-instruction-server/internal/server"
 	"github.com/idootop/open-xiaoai/examples/go-instruction-server/internal/speaker"
+	"github.com/idootop/open-xiaoai/examples/go-instruction-server/internal/tasks"
 )
 
 func main() {
 	addr := flag.String("addr", ":4399", "websocket listen address")
+	dashboardAddr := flag.String("dashboard-addr", ":8090", "dashboard listen address")
+	tasksFile := flag.String("tasks-file", "data/tasks.json", "async task store path")
+	conversationsFile := flag.String("conversations-file", "data/conversations.json", "conversation history store path")
+	claudeStateFile := flag.String("claude-state-file", "data/plugins/claude_code.json", "claude plugin state store path")
+	claudeCwd := flag.String("claude-cwd", "", "working directory for claude complex tasks")
 	debug := flag.Bool("debug", false, "print raw events for debugging")
-	abortAfterASR := flag.Bool("abort-after-asr", true, "restart mico_aivs_lab after final ASR result")
+	abortAfterASR := flag.Bool("abort-after-asr", true, "abort original XiaoAI immediately before intent stage")
+	postAbortDelay := flag.Duration("post-abort-delay", 0, "delay after aborting original XiaoAI before starting playback, for example 500ms or 2s")
+	useParallelIntentChat := flag.Bool("parallel-intent-chat", true, "run intent and main chat reply in parallel, and reuse speculative reply when no tool is selected")
 	flag.Parse()
 
 	cfg := server.Config{
 		Addr:  *addr,
 		Debug: *debug,
 	}
+	appConfig, err := config.Load(".")
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Printf("loaded SOUL.md (%d chars)", len(appConfig.Soul))
+	log.Printf("loaded models: intent=%s reply=%s", appConfig.Intent.Model, appConfig.Reply.Model)
+	llmClient := llm.NewClient()
 	spk := speaker.New()
+	weatherClient := amap.NewClient(appConfig.AMap.APIKey)
+	taskManager, err := tasks.NewManager(*tasksFile)
+	if err != nil {
+		log.Fatal(err)
+	}
+	rootCWD, err := resolveClaudeCWD(*claudeCwd)
+	if err != nil {
+		log.Fatal(err)
+	}
+	claudeStore, err := complextask.NewStore(*claudeStateFile)
+	if err != nil {
+		log.Fatal(err)
+	}
+	complexTaskService := complextask.NewService(claudeStore, complextask.NewClaudeRunner(claudeStore, rootCWD))
+	resumeRegistry := continuetask.NewResumeRegistry()
+	resumeRegistry.Register("complex_task", complexTaskService)
+	plugins, err := buildPlugins(weatherClient, taskManager, complexTaskService, resumeRegistry)
+	if err != nil {
+		log.Fatal(err)
+	}
+	asrService, err := assistant.New(
+		assistant.Config{
+			AbortAfterASR:         *abortAfterASR,
+			PostAbortDelay:        *postAbortDelay,
+			SessionWindow:         5 * time.Minute,
+			UseParallelIntentChat: *useParallelIntentChat,
+			ConversationsFile:     *conversationsFile,
+		},
+		llm.NewIntentRecognizer(llmClient, appConfig.Intent, plugins, taskManager),
+		llm.NewReplyGenerator(llmClient, appConfig.Reply, appConfig.Soul),
+		plugins,
+		taskManager,
+		spk,
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	srv := server.New(cfg, func(session *server.Session, text string) {
-		log.Printf("xiaoai command: %s", text)
-
-		if text == "测试播放文字" {
-			go func() {
-				if err := session.AbortXiaoAI(5 * time.Second); err != nil {
-					log.Printf("abort xiaoai failed: %v", err)
-					return
-				}
-				time.Sleep(2 * time.Second)
-				if err := spk.PlayText(session, "你好，很高兴认识你！", 30*time.Second); err != nil {
-					log.Printf("play text failed: %v", err)
-					return
-				}
-				log.Printf("played demo reply text")
-			}()
-			return
+	srv := server.New(cfg, asrService.OnASR)
+	go func() {
+		if err := dashboard.New(*dashboardAddr, taskManager, complexTaskService, asrService).ListenAndServe(); err != nil {
+			log.Printf("dashboard stopped: %v", err)
 		}
-
-		if text == "测试长段播放文字" {
-			go func() {
-				if err := session.AbortXiaoAI(5 * time.Second); err != nil {
-					log.Printf("abort xiaoai failed: %v", err)
-					return
-				}
-				time.Sleep(2 * time.Second)
-
-				chunks := []string{
-					"你好，我现在开始演示流式文字播放。",
-					"这段回复不会一次性整段播完，",
-					"而是像 migpt 一样，",
-					"按多段文字顺序调用音箱本地 TTS。",
-					"每一段播完之后，",
-					"再继续播放下一段。",
-				}
-
-				if err := spk.PlayTextStream(session, chunks, 30*time.Second, 100*time.Millisecond); err != nil {
-					log.Printf("play text stream failed: %v", err)
-					return
-				}
-				log.Printf("played demo reply text stream")
-			}()
-			return
-		}
-
-		if !*abortAfterASR {
-			return
-		}
-
-		go func() {
-			if err := session.AbortXiaoAI(5 * time.Second); err != nil {
-				log.Printf("abort xiaoai failed: %v", err)
-				return
-			}
-			log.Printf("xiaoai aborted after final ASR")
-		}()
-	})
+	}()
 
 	if err := srv.ListenAndServe(); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func buildPlugins(weatherClient weather.Service, taskManager *tasks.Manager, complexTaskService *complextask.Service, resumeRegistry *continuetask.ResumeRegistry) (*plugin.Registry, error) {
+	registry := plugin.NewRegistry()
+	if err := plugins.RegisterAll(registry, weatherClient, taskManager, complexTaskService, resumeRegistry); err != nil {
+		return nil, err
+	}
+	return registry, nil
+}
+
+func resolveClaudeCWD(value string) (string, error) {
+	if strings.TrimSpace(value) != "" {
+		return filepath.Abs(value)
+	}
+
+	current, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Abs(filepath.Join(current, "..", ".."))
 }

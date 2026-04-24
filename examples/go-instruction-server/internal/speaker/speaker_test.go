@@ -166,3 +166,53 @@ func TestPlayTextStream(t *testing.T) {
 		}
 	})
 }
+
+func TestStreamPlayer(t *testing.T) {
+	t.Parallel()
+
+	t.Run("flushes when punctuation arrives", func(t *testing.T) {
+		t.Parallel()
+
+		runner := &fakeRunner{
+			result: server.CommandResult{ExitCode: 0},
+		}
+		player := NewStreamPlayer(New(), runner, 3*time.Second, 0)
+
+		if err := player.Push("你好"); err != nil {
+			t.Fatalf("Push() error = %v", err)
+		}
+		if len(runner.scripts) != 0 {
+			t.Fatalf("len(scripts) = %d, want 0", len(runner.scripts))
+		}
+
+		if err := player.Push("，我是小智。"); err != nil {
+			t.Fatalf("Push() error = %v", err)
+		}
+
+		want := "/usr/sbin/tts_play.sh '你好，我是小智。'"
+		if len(runner.scripts) != 1 || runner.scripts[0] != want {
+			t.Fatalf("scripts = %#v, want %q", runner.scripts, want)
+		}
+	})
+
+	t.Run("flushes remaining text on close", func(t *testing.T) {
+		t.Parallel()
+
+		runner := &fakeRunner{
+			result: server.CommandResult{ExitCode: 0},
+		}
+		player := NewStreamPlayer(New(), runner, 3*time.Second, 0)
+
+		if err := player.Push("这是一个没有句号的长回复"); err != nil {
+			t.Fatalf("Push() error = %v", err)
+		}
+		if err := player.Close(); err != nil {
+			t.Fatalf("Close() error = %v", err)
+		}
+
+		want := "/usr/sbin/tts_play.sh '这是一个没有句号的长回复'"
+		if len(runner.scripts) != 1 || runner.scripts[0] != want {
+			t.Fatalf("scripts = %#v, want %q", runner.scripts, want)
+		}
+	})
+}
