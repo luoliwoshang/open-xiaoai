@@ -94,10 +94,18 @@ async function main() {
           path.join(process.cwd(), "assets", ".version"),
           ota.version
         );
+      } else {
+        console.log(`❌ 固件下载失败`);
+        process.exit(1);
       }
+    } else {
+      console.log(`❌ OTA 响应里没有 currentInfo，无法下载固件`);
+      console.log(JSON.stringify(data, null, 4));
+      process.exit(1);
     }
   } else {
     console.log(`❌ 获取固件信息失败: ${data.code || "未知错误"}`);
+    console.log(JSON.stringify(data, null, 4));
     process.exit(1);
   }
 }

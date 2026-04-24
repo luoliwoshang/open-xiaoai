@@ -1,0 +1,38 @@
+name: Go Instruction Server
+
+on:
+  push:
+    paths:
+      - "examples/go-instruction-server/**"
+      - ".github/workflows/go-instruction-server.yml"
+  pull_request:
+    branches: [ main ]
+    paths:
+      - "examples/go-instruction-server/**"
+      - ".github/workflows/go-instruction-server.yml"
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: examples/go-instruction-server
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: examples/go-instruction-server/go.mod
+          cache-dependency-path: examples/go-instruction-server/go.sum
+
+      - name: Check formatting
+        run: |
+          test -z "$(gofmt -l .)"
+
+      - name: Run tests
+        run: go test ./...
